@@ -1,114 +1,65 @@
-Face Recognition Attendance System
+# Face Recognition Attendance System
 
-A local webcam prototype that recognizes enrolled faces and records one attendance entry per person in a CSV file.
+A local webcam prototype that recognizes enrolled faces and records attendance in a CSV file.
 
-This repository is being revived incrementally. Milestone 1 focuses on making the original prototype reliable and understandable. SQLite, date-aware attendance, enrollment, and a dashboard will be introduced in later milestones.
+# Date-aware attendance
 
-# Features
+This milestone keeps CSV storage but fixes the original attendance rule. A person can now be marked once per day instead of once forever.
 
-Real-time face recognition through a webcam.
-One image per enrolled person.
-Configurable camera index.
-Configurable recognition tolerance.
-Safe handling of missing or invalid training images.
-Unknown-face labeling.
-Duplicate prevention within the current attendance file.
-Graceful camera and window cleanup.
+# Attendance format
+
+Records use this format:
+
+## Plain Text
 
 
-# Requirements
+name,date,time
+Nitin,2026-08-31,22:31:22
 
-Python 3.10 or newer.
-A working webcam.
-Native build support may be required by face-recognition and its dlib dependency, depending on your operating system.
 
-# Setup
 
-Clone the repository and enter its directory:
+The date uses ISO format (YYYY-MM-DD), which makes records easier to sort and migrate into a database later.
+
+Legacy file migration
+
+If an existing local Attendance.csv uses the old format:
+
+## Plain Text
+
+
+name,time
+Nitin,22:31:22
+
+
+
+AttendanceStore automatically converts it to the new three-column format when the application starts. Because the old format did not save dates, migrated rows are assigned the date on which the migration runs. This limitation is documented and will disappear once attendance is moved to a database.
+
+Run the application
+
+Activate the virtual environment and run:
 
 Bash
 
 
-git clone https://github.com/06-nitiin/Face-recognition-attendance-system.git
-cd Face-recognition-attendance-system
-
-
-
-Create and activate a virtual environment:
-
-Bash
-python -m venv .venv
-
-On macOS/Linux:
-Bash
 source .venv/bin/activate
-
-On Windows PowerShell:
-Plain Text
-.venv\Scripts\Activate.ps1
-
-
-Install dependencies:
-Bash
-
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-
-Add training images
-
-Place one clear image containing exactly one face inside Training_images/.
-
-The filename becomes the recognized name. For example:
-
-Plain Text
-
-
-Training_images/
-├── Alice.jpg
-└── Bob.png
-
-
-
-Use front-facing, well-lit images. Do not commit personal face images or real attendance data to a public repository. The .gitignore file excludes them by default.
-
-Run
-
-Start the application with the default camera:
-
-Bash
-
-
 python app.py
 
 
 
-Use a different camera and a stricter recognition threshold when needed:
+The webcam recognition behavior remains the same as Milestone 1. The application calls AttendanceStore.mark_present() for recognized faces, and the store prevents duplicates for the same name and date.
+
+Run the tests
+
+The tests use Python's built-in unittest module, so no additional test dependency is needed:
 
 Bash
 
 
-python app.py --camera 1 --tolerance 0.45
+python -m unittest discover -s tests -v
 
 
 
-Lower tolerance values are stricter. If the value is too low, valid faces may be labeled unknown; if it is too high, false matches become more likely.
-
-Press q in the camera window to stop the application.
-
-Output
-
-The prototype writes records to Attendance.csv using this temporary format:
-
-Plain Text
-
-
-name,time
-Alice,09:15:22
-
-
-
-This storage format is intentionally temporary. The next milestone will introduce date-aware attendance rules, followed by SQLite storage.
+The tests cover duplicate prevention, attendance across different days, case-insensitive names, legacy CSV migration, and invalid empty names.
 
 Project structure
 
@@ -116,17 +67,18 @@ Plain Text
 
 
 .
-├── app.py              # Command-line application and webcam loop
-├── attendance.py       # CSV attendance storage
-├── face_engine.py      # Face loading, encoding, and recognition
-├── Training_images/    # Local enrollment images; ignored by Git
-├── Attendance.csv      # Local runtime data; ignored by Git
-├── requirements.txt
-└── .gitignore
+├── app.py
+├── attendance.py
+├── face_engine.py
+├── Attendance.example.csv
+├── Attendance.csv          # local runtime file, ignored by Git
+├── Training_images/        # local face images, ignored by Git
+└── tests/
+    └── test_attendance.py
 
 
 
-Limitations
+Current limitations
 
-This is an educational prototype. It does not yet include authentication, liveness detection, a database, date-aware sessions, an enrollment interface, reporting, or protection against spoofing. Face recognition can produce false positives and false negatives, so this system should not be used for high-stakes decisions without proper validation and safeguards.
+CSV is still a temporary storage solution. The next milestone will introduce SQLite, stronger constraints, person IDs, and a schema suitable for attendance sessions and reporting. This remains an educational prototype and should not be used for high-stakes decisions without validation, consent, and privacy safeguards.
 
