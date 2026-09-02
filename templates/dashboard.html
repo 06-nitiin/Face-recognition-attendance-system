@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Overview · Attendance Dashboard{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+<div class="cards"><div class="card"><span>Total attendance</span><strong>{{ summary.total }}</strong></div><div class="card"><span>Registered people</span><strong>{{ people|length }}</strong></div><div class="card"><span>Sessions</span><strong>{{ sessions|length }}</strong></div><div class="card"><span>Dates represented</span><strong>{{ summary.dates }}</strong></div></div>
+<section class="panel"><div class="panel-heading"><h2>Recent attendance</h2><a href="{{ url_for('attendance') }}">View all</a></div>{% if recent_records %}<table><tr><th>Name</th><th>Date</th><th>Time</th><th>Session</th></tr>{% for record in recent_records %}<tr><td>{{ record.name }}</td><td>{{ record.attendance_date }}</td><td>{{ record.time }}</td><td>#{{ record.session_id }}</td></tr>{% endfor %}</table>{% else %}<p>No attendance records yet.</p>{% endif %}</section>
+{% endblock %}

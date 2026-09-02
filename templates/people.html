@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}People · Attendance Dashboard{% endblock %}
+{% block content %}<h1>People</h1><section class="panel"><table><tr><th>ID</th><th>Name</th><th>External ID</th><th>Email</th><th>Status</th></tr>{% for person in people %}<tr><td>{{ person.id }}</td><td>{{ person.name }}</td><td>{{ person.external_id or "—" }}</td><td>{{ person.email or "—" }}</td><td><span class="status {{ 'active' if person.is_active else 'inactive' }}">{{ 'Active' if person.is_active else 'Inactive' }}</span></td></tr>{% else %}<tr><td colspan="5">No people registered.</td></tr>{% endfor %}</table></section>{% endblock %}

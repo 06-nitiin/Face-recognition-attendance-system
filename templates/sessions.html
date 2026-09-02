@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}Sessions · Attendance Dashboard{% endblock %}
+{% block content %}<h1>Sessions</h1><section class="panel"><table><tr><th>ID</th><th>Name</th><th>Date</th><th>Started</th><th>Ended</th></tr>{% for session in sessions %}<tr><td>{{ session.id }}</td><td>{{ session.name }}</td><td>{{ session.session_date }}</td><td>{{ session.started_at }}</td><td>{{ session.ended_at or "Open" }}</td></tr>{% else %}<tr><td colspan="5">No sessions found.</td></tr>{% endfor %}</table></section>{% endblock %}
