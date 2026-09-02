@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
 
@@ -8,20 +9,21 @@ import numpy as np
 
 
 @dataclass
-class KnownFace:
+class KnownPerson:
     name: str
-    encoding: np.ndarray
+    encodings: List[np.ndarray] = field(default_factory=list)
 
 
 class FaceEngine:
-    """Loads known faces and matches faces found in webcam frames."""
+    """Loads and matches one or more face samples for each person."""
 
     SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+    SAMPLE_SEPARATOR = "__"
 
     def __init__(self, training_dir: Path, tolerance: float = 0.5) -> None:
         self.training_dir = training_dir
         self.tolerance = tolerance
-        self.known_faces: List[KnownFace] = []
+        self.known_people: List[KnownPerson] = []
         self.load_known_faces()
 
     def load_known_faces(self) -> None:
@@ -29,7 +31,6 @@ class FaceEngine:
             raise FileNotFoundError(
                 f"Training directory does not exist: {self.training_dir}"
             )
-
         if not self.training_dir.is_dir():
             raise NotADirectoryError(
                 f"Training path is not a directory: {self.training_dir}"
@@ -40,13 +41,13 @@ class FaceEngine:
             for path in self.training_dir.iterdir()
             if path.is_file() and path.suffix.lower() in self.SUPPORTED_EXTENSIONS
         )
-
         if not image_paths:
             raise ValueError(
                 f"No training images found in {self.training_dir}. "
-                "Add one image per person, such as Alice.jpg."
+                "Enroll a person before starting attendance."
             )
 
+        grouped_encodings: dict[str, list[np.ndarray]] = defaultdict(list)
         for image_path in image_paths:
             image = cv2.imread(str(image_path))
             if image is None:
@@ -55,7 +56,6 @@ class FaceEngine:
 
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             locations = face_recognition.face_locations(rgb_image)
-
             if len(locations) != 1:
                 print(
                     f"Warning: {image_path.name} contains {len(locations)} faces; "
@@ -68,31 +68,40 @@ class FaceEngine:
                 print(f"Warning: could not encode {image_path.name}; skipping.")
                 continue
 
-            self.known_faces.append(
-                KnownFace(name=image_path.stem, encoding=encodings[0])
-            )
+            person_name = self.person_name_from_stem(image_path.stem)
+            grouped_encodings[person_name].append(encodings[0])
 
-        if not self.known_faces:
+        self.known_people = [
+            KnownPerson(name=name, encodings=encodings)
+            for name, encodings in sorted(grouped_encodings.items())
+        ]
+        if not self.known_people:
             raise ValueError("No valid training images could be encoded.")
+
+    @classmethod
+    def person_name_from_stem(cls, stem: str) -> str:
+        return stem.split(cls.SAMPLE_SEPARATOR, maxsplit=1)[0]
 
     def recognize(
         self, frame: np.ndarray, scale: float = 0.25
     ) -> List[Tuple[str | None, Tuple[int, int, int, int], float]]:
-        """Return name, full-size location, and distance for each detected face."""
+        """Return name, full-size location, and closest sample distance."""
         small_frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
         rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
         locations = face_recognition.face_locations(rgb_small_frame)
         encodings = face_recognition.face_encodings(rgb_small_frame, locations)
 
-        known_encodings = [face.encoding for face in self.known_faces]
         results = []
-
         for encoding, location in zip(encodings, locations):
-            distances = face_recognition.face_distance(known_encodings, encoding)
-            best_index = int(np.argmin(distances))
-            best_distance = float(distances[best_index])
+            person_distances = []
+            for person in self.known_people:
+                distances = face_recognition.face_distance(person.encodings, encoding)
+                person_distances.append(float(np.min(distances)))
+
+            best_index = int(np.argmin(person_distances))
+            best_distance = person_distances[best_index]
             name = (
-                self.known_faces[best_index].name
+                self.known_people[best_index].name
                 if best_distance <= self.tolerance
                 else None
             )

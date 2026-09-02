@@ -4,15 +4,10 @@ from pathlib import Path
 import cv2
 import face_recognition
 
-from enrollment_utils import safe_person_name
+from enrollment_utils import enrollment_paths, safe_person_name
 
 
-def has_exactly_one_face(frame) -> bool:
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    return len(face_recognition.face_locations(rgb_frame)) == 1
-
-
-def face_is_large_enough(frame, minimum_size: int = 120) -> bool:
+def valid_face(frame, minimum_size: int = 120) -> bool:
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     locations = face_recognition.face_locations(rgb_frame)
     if len(locations) != 1:
@@ -23,33 +18,38 @@ def face_is_large_enough(frame, minimum_size: int = 120) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Enroll one person using a validated webcam image."
+        description="Enroll multiple validated webcam samples for one person."
     )
-    parser.add_argument("name", help="Person's name, used as the image filename.")
+    parser.add_argument("name", help="Person's name used for the enrollment files.")
     parser.add_argument(
-        "--training-dir",
-        type=Path,
-        default=Path("Training_images"),
-        help="Directory where the enrolled image will be stored.",
+        "--training-dir", type=Path, default=Path("Training_images")
     )
+    parser.add_argument("--camera", type=int, default=0)
     parser.add_argument(
-        "--camera", type=int, default=0, help="Camera index passed to OpenCV."
+        "--samples", type=int, default=5, help="Number of samples to capture."
     )
     parser.add_argument(
-        "--force", action="store_true", help="Replace an existing enrollment image."
+        "--force", action="store_true", help="Replace existing samples for this person."
     )
     return parser.parse_args()
 
 
-def enroll(name: str, training_dir: Path, camera_index: int, force: bool) -> Path:
+def enroll(
+    name: str, training_dir: Path, camera_index: int, sample_count: int, force: bool
+) -> list[Path]:
+    if sample_count < 1:
+        raise ValueError("Sample count must be at least 1.")
+
     safe_name = safe_person_name(name)
     training_dir.mkdir(parents=True, exist_ok=True)
-    output_path = training_dir / f"{safe_name}.jpg"
-
-    if output_path.exists() and not force:
+    existing_paths = enrollment_paths(training_dir, safe_name)
+    if existing_paths and not force:
         raise FileExistsError(
-            f"{output_path} already exists. Use --force to replace it."
+            f"Existing enrollment found for {safe_name}. Use --force to replace it."
         )
+    if force:
+        for path in existing_paths:
+            path.unlink()
 
     camera = cv2.VideoCapture(camera_index)
     if not camera.isOpened():
@@ -57,28 +57,28 @@ def enroll(name: str, training_dir: Path, camera_index: int, force: bool) -> Pat
             f"Could not open camera {camera_index}. Check camera permissions."
         )
 
-    print("Enrollment started.")
-    print("Position one face in the frame, then press 's' to save or 'q' to cancel.")
+    saved_paths: list[Path] = []
+    print(f"Enrollment started for {safe_name}; capture {sample_count} samples.")
+    print("Press 's' when the frame says READY. Press 'q' to cancel.")
 
     try:
-        while True:
+        while len(saved_paths) < sample_count:
             success, frame = camera.read()
             if not success or frame is None:
                 raise RuntimeError("Could not read a frame from the camera.")
 
+            ready = valid_face(frame)
+            remaining = sample_count - len(saved_paths)
+            message = (
+                f"READY - press s ({remaining} remaining)"
+                if ready
+                else "Need exactly one close face"
+            )
+            color = (0, 180, 0) if ready else (0, 0, 220)
             preview = frame.copy()
-            valid = has_exactly_one_face(frame) and face_is_large_enough(frame)
-            message = "READY - press s to save" if valid else "Need exactly one close face"
-            color = (0, 180, 0) if valid else (0, 0, 220)
             cv2.putText(
-                preview,
-                message,
-                (20, 35),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                color,
-                2,
-                cv2.LINE_AA,
+                preview, message, (20, 35), cv2.FONT_HERSHEY_SIMPLEX,
+                0.8, color, 2, cv2.LINE_AA
             )
             cv2.imshow("Face Enrollment", preview)
 
@@ -86,23 +86,30 @@ def enroll(name: str, training_dir: Path, camera_index: int, force: bool) -> Pat
             if key == ord("q"):
                 raise RuntimeError("Enrollment cancelled.")
             if key == ord("s"):
-                if not valid:
+                if not ready:
                     print("Image rejected: show exactly one face closer to the camera.")
                     continue
-                cv2.imwrite(str(output_path), frame)
-                return output_path
+                output_path = training_dir / f"{safe_name}__{len(saved_paths) + 1}.jpg"
+                if not cv2.imwrite(str(output_path), frame):
+                    raise RuntimeError(f"Could not save {output_path}.")
+                saved_paths.append(output_path)
+                print(f"Saved sample {len(saved_paths)}/{sample_count}.")
     finally:
         camera.release()
         cv2.destroyAllWindows()
+
+    return saved_paths
 
 
 def main() -> None:
     args = parse_args()
     try:
-        output_path = enroll(args.name, args.training_dir, args.camera, args.force)
+        saved_paths = enroll(
+            args.name, args.training_dir, args.camera, args.samples, args.force
+        )
     except (ValueError, FileExistsError, RuntimeError) as error:
         raise SystemExit(f"Enrollment error: {error}") from error
-    print(f"Enrollment saved to {output_path}")
+    print(f"Enrollment complete. Saved {len(saved_paths)} sample(s).")
 
 
 if __name__ == "__main__":
