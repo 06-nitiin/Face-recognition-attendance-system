@@ -67,15 +67,16 @@ def main():
             results = engine.recognize(frame)
             confirmer.start_frame()
             for name, location, distance in results:
-                confirmation = confirmer.observe(name)
-                draw_result(frame, name, location, distance, confirmation.progress, args.confirm_frames)
-                if confirmation.confirmed and cooldown.allows(confirmation.name):
-                    marked = attendance.mark_present(confirmation.name, session_id=session.id)
-                    cooldown.record(confirmation.name)
+                confirmed_name = confirmer.observe(name)
+                progress = confirmer.progress(name)
+                draw_result(frame, name, location, distance, progress, args.confirm_frames)
+                if confirmed_name and cooldown.allows(confirmed_name):
+                    marked = attendance.mark_present(confirmed_name, session_id=session.id)
+                    cooldown.record(confirmed_name)
                     if marked:
-                        print(f"Attendance marked for {confirmation.name}.")
+                        print(f"Attendance marked for {confirmed_name}.")
                     else:
-                        print(f"Attendance already recorded in this session for {confirmation.name}.")
+                        print(f"Attendance already recorded in this session for {confirmed_name}.")
             confirmer.finish_frame()
             cv2.imshow("Face Recognition Attendance", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
