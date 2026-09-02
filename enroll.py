@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import face_recognition
 
+from attendance import AttendanceStore
 from enrollment_utils import enrollment_paths, safe_person_name
 
 
@@ -18,25 +19,20 @@ def valid_face(frame, minimum_size: int = 120) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Enroll multiple validated webcam samples for one person."
+        description="Enroll face samples and register person metadata."
     )
-    parser.add_argument("name", help="Person's name used for the enrollment files.")
-    parser.add_argument(
-        "--training-dir", type=Path, default=Path("Training_images")
-    )
+    parser.add_argument("name", help="Person's full name.")
+    parser.add_argument("--email", help="Optional email address.")
+    parser.add_argument("--person-id", dest="external_id", help="Optional student/employee ID.")
+    parser.add_argument("--database", type=Path, default=Path("attendance.db"))
+    parser.add_argument("--training-dir", type=Path, default=Path("Training_images"))
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument(
-        "--samples", type=int, default=5, help="Number of samples to capture."
-    )
-    parser.add_argument(
-        "--force", action="store_true", help="Replace existing samples for this person."
-    )
+    parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument("--force", action="store_true")
     return parser.parse_args()
 
 
-def enroll(
-    name: str, training_dir: Path, camera_index: int, sample_count: int, force: bool
-) -> list[Path]:
+def enroll(name, training_dir, camera_index, sample_count, force, database_path, email, external_id):
     if sample_count < 1:
         raise ValueError("Sample count must be at least 1.")
 
@@ -53,41 +49,29 @@ def enroll(
 
     camera = cv2.VideoCapture(camera_index)
     if not camera.isOpened():
-        raise RuntimeError(
-            f"Could not open camera {camera_index}. Check camera permissions."
-        )
+        raise RuntimeError(f"Could not open camera {camera_index}. Check permissions.")
 
-    saved_paths: list[Path] = []
+    saved_paths = []
     print(f"Enrollment started for {safe_name}; capture {sample_count} samples.")
     print("Press 's' when the frame says READY. Press 'q' to cancel.")
-
     try:
         while len(saved_paths) < sample_count:
             success, frame = camera.read()
             if not success or frame is None:
                 raise RuntimeError("Could not read a frame from the camera.")
-
             ready = valid_face(frame)
             remaining = sample_count - len(saved_paths)
-            message = (
-                f"READY - press s ({remaining} remaining)"
-                if ready
-                else "Need exactly one close face"
-            )
+            message = f"READY - press s ({remaining} remaining)" if ready else "Need exactly one close face"
             color = (0, 180, 0) if ready else (0, 0, 220)
             preview = frame.copy()
-            cv2.putText(
-                preview, message, (20, 35), cv2.FONT_HERSHEY_SIMPLEX,
-                0.8, color, 2, cv2.LINE_AA
-            )
+            cv2.putText(preview, message, (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
             cv2.imshow("Face Enrollment", preview)
-
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 raise RuntimeError("Enrollment cancelled.")
             if key == ord("s"):
                 if not ready:
-                    print("Image rejected: show exactly one face closer to the camera.")
+                    print("Image rejected: show exactly one close face.")
                     continue
                 output_path = training_dir / f"{safe_name}__{len(saved_paths) + 1}.jpg"
                 if not cv2.imwrite(str(output_path), frame):
@@ -98,6 +82,12 @@ def enroll(
         camera.release()
         cv2.destroyAllWindows()
 
+    store = AttendanceStore(database_path)
+    try:
+        person = store.register_person(safe_name, external_id=external_id, email=email)
+    finally:
+        store.close()
+    print(f"Registered person #{person.id}: {person.name}")
     return saved_paths
 
 
@@ -105,7 +95,8 @@ def main() -> None:
     args = parse_args()
     try:
         saved_paths = enroll(
-            args.name, args.training_dir, args.camera, args.samples, args.force
+            args.name, args.training_dir, args.camera, args.samples, args.force,
+            args.database, args.email, args.external_id,
         )
     except (ValueError, FileExistsError, RuntimeError) as error:
         raise SystemExit(f"Enrollment error: {error}") from error
