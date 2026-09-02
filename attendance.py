@@ -130,6 +130,10 @@ class AttendanceStore:
         self.connection.commit()
 
     def mark_present(self, name: str, session_id: int | None = None, now: datetime | None = None) -> bool:
+        # Preserve the Milestone 3-7 calling style: mark_present(name, datetime).
+        if isinstance(session_id, datetime) and now is None:
+            now = session_id
+            session_id = None
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Attendance name cannot be empty.")
