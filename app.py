@@ -18,10 +18,10 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing one face image per person.",
     )
     parser.add_argument(
-        "--attendance-file",
+        "--database",
         type=Path,
-        default=Path("Attendance.csv"),
-        help="CSV file used to store attendance.",
+        default=Path("attendance.db"),
+        help="SQLite database used to store attendance.",
     )
     parser.add_argument(
         "--camera",
@@ -65,10 +65,11 @@ def main() -> None:
     except (FileNotFoundError, NotADirectoryError, ValueError) as error:
         raise SystemExit(f"Startup error: {error}") from error
 
-    attendance = AttendanceStore(args.attendance_file)
+    attendance = AttendanceStore(args.database)
     camera = cv2.VideoCapture(args.camera)
 
     if not camera.isOpened():
+        attendance.close()
         raise SystemExit(
             f"Could not open camera {args.camera}. Check the camera index and permissions."
         )
@@ -93,6 +94,7 @@ def main() -> None:
     finally:
         camera.release()
         cv2.destroyAllWindows()
+        attendance.close()
         print("Recognition stopped.")
 
 

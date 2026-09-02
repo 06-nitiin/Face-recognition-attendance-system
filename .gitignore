@@ -5,6 +5,11 @@ venv/
 .env
 .DS_Store
 
+# Personal biometric images and runtime attendance data
 Training_images/*
 !Training_images/.gitkeep
 Attendance.csv
+attendance.db
+*.db
+*.sqlite
+*.sqlite3

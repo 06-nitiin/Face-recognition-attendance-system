@@ -1,101 +1,68 @@
-import csv
+import sqlite3
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 
 @dataclass(frozen=True)
 class AttendanceRecord:
+    id: int
     name: str
     attendance_date: str
     time: str
+    created_at: str
 
 
 class AttendanceStore:
-    HEADER = ["name", "date", "time"]
-    LEGACY_HEADER = ["name", "time"]
 
-    def __init__(self, csv_path: Path) -> None:
-        self.csv_path = csv_path
-        self.csv_path.parent.mkdir(parents=True, exist_ok=True)
-        self.csv_path.touch(exist_ok=True)
-        self._migrate_legacy_file()
+    def __init__(self, database_path: Path) -> None:
+        self.database_path = database_path
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(self.database_path)
+        self.connection.row_factory = sqlite3.Row
+        self._initialize_schema()
 
     def mark_present(self, name: str, now: datetime | None = None) -> bool:
-        if not name.strip():
+        clean_name = name.strip()
+        if not clean_name:
             raise ValueError("Attendance name cannot be empty.")
 
         timestamp = now or datetime.now()
         attendance_date = timestamp.date().isoformat()
         attendance_time = timestamp.strftime("%H:%M:%S")
-        records = self._read_records()
+        created_at = timestamp.isoformat(timespec="seconds")
 
-        already_present = any(
-            record.name.casefold() == name.casefold()
-            and record.attendance_date == attendance_date
-            for record in records
+        cursor = self.connection.execute(
+            """
+            INSERT OR IGNORE INTO attendance
+                (name, attendance_date, check_in_time, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (clean_name, attendance_date, attendance_time, created_at),
         )
-        if already_present:
-            return False
-
-        with self.csv_path.open("a", encoding="utf-8", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow([name.strip(), attendance_date, attendance_time])
-        return True
+        self.connection.commit()
+        return cursor.rowcount == 1
 
     def records(self) -> list[AttendanceRecord]:
-        return self._read_records()
-
-    def _read_records(self) -> list[AttendanceRecord]:
-        records: list[AttendanceRecord] = []
-        with self.csv_path.open("r", encoding="utf-8", newline="") as file:
-            reader = csv.reader(file)
-            for row in reader:
-                if not row or not any(cell.strip() for cell in row):
-                    continue
-                if [cell.strip().lower() for cell in row] == self.HEADER:
-                    continue
-                if [cell.strip().lower() for cell in row] == self.LEGACY_HEADER:
-                    continue
-                if len(row) == 3:
-                    records.append(
-                        AttendanceRecord(
-                            name=row[0].strip(),
-                            attendance_date=row[1].strip(),
-                            time=row[2].strip(),
-                        )
-                    )
-        return records
-
-    def _migrate_legacy_file(self) -> None:
-        with self.csv_path.open("r", encoding="utf-8", newline="") as file:
-            rows = list(csv.reader(file))
-
-        non_empty_rows = [row for row in rows if any(cell.strip() for cell in row)]
-        if not non_empty_rows:
-            self._write_records([])
-            return
-
-        header = [cell.strip().lower() for cell in non_empty_rows[0]]
-        if header != self.LEGACY_HEADER:
-            return
-
-        today = date.today().isoformat()
-        migrated: list[AttendanceRecord] = []
-        for row in non_empty_rows[1:]:
-            if len(row) >= 2 and row[0].strip():
-                migrated.append(
-                    AttendanceRecord(
-                        name=row[0].strip(), attendance_date=today, time=row[1].strip()
-                    )
-                )
-        self._write_records(migrated)
-
-    def _write_records(self, records: list[AttendanceRecord]) -> None:
-        with self.csv_path.open("w", encoding="utf-8", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(self.HEADER)
-            writer.writerows(
-                [record.name, record.attendance_date, record.time]
-                for record in records
+        rows = self.connection.execute(
+            
+        ).fetchall()
+        return [
+            AttendanceRecord(
+                id=row["id"],
+                name=row["name"],
+                attendance_date=row["attendance_date"],
+                time=row["check_in_time"],
+                created_at=row["created_at"],
             )
+            for row in rows
+        ]
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def _initialize_schema(self) -> None:
+        self.connection.execute(
+            
+        )
+        self.connection.commit()
