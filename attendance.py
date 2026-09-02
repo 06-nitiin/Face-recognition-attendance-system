@@ -14,6 +14,7 @@ class AttendanceRecord:
 
 
 class AttendanceStore:
+    """SQLite-backed attendance storage with one record per person per day."""
 
     def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
@@ -23,6 +24,11 @@ class AttendanceStore:
         self._initialize_schema()
 
     def mark_present(self, name: str, now: datetime | None = None) -> bool:
+        """Record attendance once per person per day.
+
+        Returns True when a new row is inserted and False when the database
+        uniqueness rule rejects a duplicate for the same person and date.
+        """
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Attendance name cannot be empty.")
@@ -45,7 +51,11 @@ class AttendanceStore:
 
     def records(self) -> list[AttendanceRecord]:
         rows = self.connection.execute(
-            
+            """
+            SELECT id, name, attendance_date, check_in_time, created_at
+            FROM attendance
+            ORDER BY attendance_date DESC, check_in_time DESC, name COLLATE NOCASE
+            """
         ).fetchall()
         return [
             AttendanceRecord(
@@ -63,6 +73,15 @@ class AttendanceStore:
 
     def _initialize_schema(self) -> None:
         self.connection.execute(
-            
+            """
+            CREATE TABLE IF NOT EXISTS attendance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                attendance_date TEXT NOT NULL,
+                check_in_time TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (name COLLATE NOCASE, attendance_date)
+            )
+            """
         )
         self.connection.commit()
