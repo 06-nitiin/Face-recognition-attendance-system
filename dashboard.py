@@ -126,7 +126,7 @@ def create_app(database_path: Path) -> Flask:
             roster_ids = set(roster_store.roster(session_id))
             present_ids = {record.person_id for record in store.records(session_id)}
             status_rows = [(person, person.id in roster_ids, person.id in present_ids) for person in people_list]
-            return render_template("session_roster.html", session=target_session, status_rows=status_rows)
+            return render_template("session_roster.html", target_session=target_session, status_rows=status_rows)
         finally:
             roster_store.close(); store.close(); auth_store.close()
 
