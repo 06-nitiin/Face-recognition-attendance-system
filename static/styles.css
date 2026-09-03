@@ -14,3 +14,6 @@ button, .button { display: inline-block; border: 0; border-radius: 6px; padding:
 .status { padding: 4px 8px; border-radius: 20px; font-size: 12px; } .active { background: #d9f5e5; color: #146c38; } .inactive { background: #fbe0e0; color: #9b2424; }
 .login-card { max-width: 420px; margin: 80px auto; } .login-card form { display: block; } .login-card label { margin: 16px 0; } .login-card input { width: 100%; } .error { color: #a11; background: #fee; padding: 10px; border-radius: 6px; }
 @media (max-width: 760px) { .cards { grid-template-columns: 1fr; } .topbar { align-items: flex-start; gap: 12px; flex-direction: column; } nav { flex-wrap: wrap; } }
+
+.analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 760px) { .analytics-grid { grid-template-columns: 1fr; } }

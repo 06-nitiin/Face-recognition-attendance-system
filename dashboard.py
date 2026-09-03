@@ -9,6 +9,7 @@ from flask import Flask, Response, redirect, render_template, request, session, 
 
 from attendance import AttendanceStore
 from auth import AuthStore
+from analytics import build_analytics
 
 
 def create_app(database_path: Path) -> Flask:
@@ -92,6 +93,18 @@ def create_app(database_path: Path) -> Flask:
         finally:
             store.close(); auth_store.close()
         return redirect(url_for("people"))
+
+    @app.get("/analytics")
+    @login_required
+    def analytics_view():
+        store, auth_store = stores()
+        try:
+            people_list = store.list_people()
+            sessions_list = store.list_sessions()
+            metrics = build_analytics(store.records(), people_list, sessions_list)
+            return render_template("analytics.html", metrics=metrics)
+        finally:
+            store.close(); auth_store.close()
 
     @app.get("/sessions")
     @login_required
