@@ -10,6 +10,7 @@ from flask import Flask, Response, redirect, render_template, request, session, 
 from attendance import AttendanceStore
 from auth import AuthStore
 from analytics import build_analytics
+from roster import RosterStore
 
 
 def create_app(database_path: Path) -> Flask:
@@ -105,6 +106,29 @@ def create_app(database_path: Path) -> Flask:
             return render_template("analytics.html", metrics=metrics)
         finally:
             store.close(); auth_store.close()
+
+    @app.route("/sessions/<int:session_id>/roster", methods=["GET", "POST"])
+    @login_required
+    def session_roster(session_id):
+        store, auth_store = stores()
+        roster_store = RosterStore(app.config["DATABASE_PATH"])
+        try:
+            target_session = store.get_session(session_id)
+            people_list = store.list_people(active_only=True)
+            if request.method == "POST":
+                selected = {int(value) for value in request.form.getlist("person_ids")}
+                current = set(roster_store.roster(session_id))
+                for person_id in current - selected:
+                    roster_store.remove_person(session_id, person_id)
+                roster_store.add_all(session_id, list(selected - current))
+                auth_store.audit(session["username"], "roster_updated", f"session:{session_id}")
+                return redirect(url_for("session_roster", session_id=session_id))
+            roster_ids = set(roster_store.roster(session_id))
+            present_ids = {record.person_id for record in store.records(session_id)}
+            status_rows = [(person, person.id in roster_ids, person.id in present_ids) for person in people_list]
+            return render_template("session_roster.html", session=target_session, status_rows=status_rows)
+        finally:
+            roster_store.close(); store.close(); auth_store.close()
 
     @app.get("/sessions")
     @login_required
