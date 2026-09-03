@@ -1,84 +1,514 @@
 # Face Recognition Attendance System
 
-A local webcam prototype that recognizes enrolled faces and records attendance in a CSV file.
+A local webcam-based attendance system built with Python. The application recognizes enrolled faces, confirms identities across consecutive video frames, records attendance in SQLite, organizes attendance into named sessions, and provides a protected local dashboard for administration and reporting.
 
-# Date-aware attendance
+This project is intended for local educational and prototype use. It is not designed to be exposed directly to the public internet or used as a production biometric system without additional security, privacy, reliability, and compliance work.
 
-This milestone keeps CSV storage but fixes the original attendance rule. A person can now be marked once per day instead of once forever.
+## Features
 
-# Attendance format
+| Area | Current functionality |
+|---|---|
+| Recognition | Local webcam face recognition using enrolled image samples |
+| Enrollment | Guided capture of multiple face samples for each person |
+| Confirmation | Requires consecutive recognition frames before recording attendance |
+| Preview | Horizontally mirrored webcam preview |
+| Storage | SQLite database with people, sessions, attendance, administrators, rosters, and audit logs |
+| Attendance | Prevents duplicate attendance for the same person in the same session |
+| Sessions | Supports named class or work sessions |
+| Dashboard | Protected local Flask dashboard |
+| Administration | Admin login, logout, person activation, and deactivation |
+| Rosters | Expected attendees with present and absent status |
+| Analytics | Totals by person, session, and date |
+| Reports | Filtered attendance display and CSV export |
 
-Records use this format:
+## Project structure
 
-## Plain Text
-
-
-name,date,time
-Nitin,2026-08-31,22:31:22
-
-
-
-The date uses ISO format (YYYY-MM-DD), which makes records easier to sort and migrate into a database later.
-
-Legacy file migration
-
-If an existing local Attendance.csv uses the old format:
-
-## Plain Text
-
-
-name,time
-Nitin,22:31:22
-
-
-
-AttendanceStore automatically converts it to the new three-column format when the application starts. Because the old format did not save dates, migrated rows are assigned the date on which the migration runs. This limitation is documented and will disappear once attendance is moved to a database.
-
-Run the application
-
-Activate the virtual environment and run:
-
-Bash
-
-
-source .venv/bin/activate
-python app.py
-
-
-
-The webcam recognition behavior remains the same as Milestone 1. The application calls AttendanceStore.mark_present() for recognized faces, and the store prevents duplicates for the same name and date.
-
-Run the tests
-
-The tests use Python's built-in unittest module, so no additional test dependency is needed:
-
-Bash
-
-
-python -m unittest discover -s tests -v
-
-
-
-The tests cover duplicate prevention, attendance across different days, case-insensitive names, legacy CSV migration, and invalid empty names.
-
-Project structure
-
-Plain Text
-
-
-.
+```text
+Face-recognition-attendance-system/
 ├── app.py
 ├── attendance.py
+├── auth.py
+├── analytics.py
+├── create_admin.py
+├── dashboard.py
+├── dashboard_utils.py
+├── enroll.py
+├── enrollment_utils.py
 ├── face_engine.py
-├── Attendance.example.csv
-├── Attendance.csv          # local runtime file, ignored by Git
-├── Training_images/        # local face images, ignored by Git
-└── tests/
-    └── test_attendance.py
+├── migrate_csv.py
+├── report.py
+├── roster.py
+├── requirements.txt
+├── requirements-dashboard.txt
+├── templates/
+│   ├── analytics.html
+│   ├── attendance.html
+│   ├── base.html
+│   ├── dashboard.html
+│   ├── login.html
+│   ├── people.html
+│   ├── sessions.html
+│   └── session_roster.html
+├── static/
+│   └── styles.css
+├── tests/
+│   ├── test_attendance.py
+│   ├── test_analytics.py
+│   ├── test_auth.py
+│   ├── test_dashboard_utils.py
+│   ├── test_enroll.py
+│   ├── test_enrollment_utils.py
+│   ├── test_legacy_upgrade.py
+│   ├── test_people.py
+│   ├── test_recognition_state.py
+│   ├── test_roster.py
+│   └── test_sessions.py
+├── Training_images/
+└── attendance.db
+```
 
+Runtime data such as `attendance.db`, face images, and generated reports should remain local and should not be committed to the repository.
 
+## Requirements
 
-Current limitations
+The project requires Python 3.10 or newer. Python 3.11 or 3.12 is recommended because some older face-recognition dependencies may not yet provide smooth support for the newest Python releases.
 
-CSV is still a temporary storage solution. The next milestone will introduce SQLite, stronger constraints, person IDs, and a schema suitable for attendance sessions and reporting. This remains an educational prototype and should not be used for high-stakes decisions without validation, consent, and privacy safeguards.
+The main application uses:
 
+- `face-recognition` for face encodings and comparisons.
+- `opencv-python` for camera capture and display.
+- `numpy` for numerical processing.
+- `face-recognition-models` for the pretrained recognition models.
+
+The dashboard additionally uses Flask.
+
+## Installation
+
+Clone the repository and enter its directory:
+
+```bash
+git clone https://github.com/06-nitiin/Face-recognition-attendance-system.git
+cd Face-recognition-attendance-system
+```
+
+Create and activate a virtual environment:
+
+### macOS and Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### Windows PowerShell
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Install the main dependencies:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Install the dashboard dependency:
+
+```bash
+python -m pip install -r requirements-dashboard.txt
+```
+
+If the face-recognition model package is missing, install it inside the active virtual environment:
+
+```bash
+python -m pip install face-recognition-models==0.3.0
+```
+
+Use the same Python environment for every command. On macOS, `python` may not exist outside a virtual environment, while `python3` may point to a different installation. After activation, verify the interpreter:
+
+```bash
+which python
+python --version
+python -m pip --version
+```
+
+## Enroll a person
+
+Create the training directory if it does not exist:
+
+```bash
+mkdir -p Training_images
+```
+
+Enroll a person with a name:
+
+```bash
+python enroll.py "Nitin" --force
+```
+
+Enrollment captures five samples by default. During enrollment:
+
+1. Keep exactly one face in the camera view.
+2. Wait for the `READY` message.
+3. Press `s` to save a sample.
+4. Repeat until all requested samples are captured.
+5. Press `q` to cancel.
+
+Enroll with optional metadata:
+
+```bash
+python enroll.py "Nitin" \
+  --person-id STU-001 \
+  --email nitin@example.com \
+  --force
+```
+
+The `--force` option replaces existing samples for the same person. Use it when you want to recapture enrollment images.
+
+To capture a different number of samples:
+
+```bash
+python enroll.py "Nitin" --samples 3 --force
+```
+
+Enrollment samples are stored locally using names similar to:
+
+```text
+Training_images/Nitin__1.jpg
+Training_images/Nitin__2.jpg
+Training_images/Nitin__3.jpg
+```
+
+## Run face recognition
+
+Start the attendance application:
+
+```bash
+python app.py
+```
+
+Start it with a named session:
+
+```bash
+python app.py --session-name "Math Class"
+```
+
+The application creates a new session for each run. It displays a mirrored camera preview and confirms a recognized person across consecutive frames before attempting to record attendance.
+
+Useful options include:
+
+```bash
+python app.py --confirm-frames 5 --cooldown 10
+```
+
+The default values are five confirmation frames and a ten-second session cooldown.
+
+Press `q` in the camera window to exit. `Ctrl+C` in the terminal is also handled cleanly.
+
+The terminal may display a warning similar to:
+
+```text
+pkg_resources is deprecated as an API
+```
+
+This is a dependency warning from `face_recognition_models`. It does not mean that recognition failed if the application continues to run.
+
+## Create an administrator account
+
+Create a local dashboard administrator:
+
+```bash
+python create_admin.py admin
+```
+
+The command prompts for the password without displaying it. Passwords must contain at least eight characters.
+
+Passwords are stored as hashes rather than plain text.
+
+## Start the protected dashboard
+
+Generate a Flask secret key once:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Save it in your Zsh configuration on macOS or Linux:
+
+```bash
+echo 'export DASHBOARD_SECRET_KEY="paste-your-generated-key-here"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Verify that the variable is available:
+
+```bash
+echo "$DASHBOARD_SECRET_KEY"
+```
+
+Start the dashboard:
+
+```bash
+python dashboard.py
+```
+
+Open the local dashboard at:
+
+```text
+http://127.0.0.1:5000
+```
+
+The dashboard requires the administrator credentials created with `create_admin.py`.
+
+The secret key must not be committed to GitHub. It is used to sign Flask login sessions. Reusing the same key means you do not need to generate a new one for every dashboard launch.
+
+## Dashboard pages
+
+| Page | URL | Purpose |
+|---|---|---|
+| Overview | `/` | Counts, recent attendance, and recent admin activity |
+| People | `/people` | Registered people and active/inactive controls |
+| Sessions | `/sessions` | Named session history |
+| Attendance | `/attendance` | Attendance records with date and session filters |
+| Analytics | `/analytics` | Totals by person, session, and date |
+| Session roster | `/sessions/<id>/roster` | Expected attendees and present/absent status |
+| CSV export | `/attendance/export` | Download filtered attendance records |
+
+## Manage a session roster
+
+1. Start a named session with `app.py`.
+2. Open the dashboard.
+3. Open the **Sessions** page.
+4. Select **Manage roster** beside a session.
+5. Select the people expected to attend.
+6. Select **Save roster**.
+
+The roster page compares the selected people with attendance records for that session.
+
+A person appears as:
+
+- **Present** when they are on the roster and have an attendance record for that session.
+- **Absent** when they are on the roster but do not have an attendance record.
+- **Not on roster** when they are not expected for that session.
+
+Roster configuration is optional. Existing recognition and attendance behavior continues to work without a roster.
+
+## Generate reports
+
+Print all attendance records:
+
+```bash
+python report.py
+```
+
+Filter by date:
+
+```bash
+python report.py --date 2026-09-02
+```
+
+Filter by session ID:
+
+```bash
+python report.py --session-id 5
+```
+
+Export records to CSV:
+
+```bash
+python report.py --output attendance-report.csv
+```
+
+The dashboard also provides a filtered CSV export button.
+
+## Import older CSV data
+
+The CSV migration utility supports common formats with either two or three columns.
+
+Import a CSV file:
+
+```bash
+python migrate_csv.py Attendance.csv
+```
+
+Use a named imported session:
+
+```bash
+python migrate_csv.py Attendance.csv --session-name "Imported attendance"
+```
+
+The utility preserves valid rows and skips malformed rows with a message.
+
+## Database
+
+The SQLite database is normally stored at:
+
+```text
+attendance.db
+```
+
+The database includes these logical areas:
+
+| Table | Purpose |
+|---|---|
+| `people` | Registered person metadata |
+| `sessions` | Named attendance sessions |
+| `attendance` | Attendance records linked to people and sessions |
+| `session_roster` | Expected people for each session |
+| `admin_users` | Hashed dashboard administrator credentials |
+| `audit_logs` | Administrative activity history |
+
+The application upgrades older database structures automatically where supported. Do not delete `attendance.db` unless you intentionally want to remove local attendance history.
+
+Inspect tables:
+
+```bash
+sqlite3 attendance.db ".tables"
+```
+
+Inspect people:
+
+```bash
+sqlite3 attendance.db "SELECT id, name, external_id, email, is_active FROM people;"
+```
+
+Inspect linked attendance:
+
+```bash
+sqlite3 attendance.db "
+SELECT people.name, sessions.name, sessions.session_date, attendance.check_in_time
+FROM attendance
+JOIN people ON people.id = attendance.person_id
+JOIN sessions ON sessions.id = attendance.session_id;
+"
+```
+
+## Testing
+
+Run the complete test suite from the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests cover:
+
+- Attendance uniqueness.
+- Date-aware storage.
+- SQLite migration.
+- Person metadata.
+- Session behavior.
+- Roster behavior.
+- Present and absent status.
+- Recognition confirmation.
+- Session cooldown.
+- Dashboard filtering.
+- Analytics calculations.
+- Password hashing.
+- Authentication.
+- Audit logging.
+
+A successful run ends with:
+
+```text
+OK
+```
+
+## Privacy and security
+
+Face images and biometric encodings are sensitive personal data. Obtain appropriate consent before enrolling anyone.
+
+Keep these files private:
+
+```text
+Training_images/
+attendance.db
+Attendance.csv
+*.csv
+.env
+```
+
+Do not commit real face images, attendance records, passwords, secret keys, or personal metadata to GitHub.
+
+The local dashboard should bind to `127.0.0.1` during development. Do not use the Flask development server as a public production server.
+
+The current system provides basic local authentication. It does not yet provide all controls expected of a production biometric system, such as strong role separation, rate limiting, CSRF protection, encrypted biometric storage, consent management, retention policies, or regulatory compliance workflows.
+
+## Troubleshooting
+
+### `python: command not found`
+
+Use `python3`, or activate the virtual environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Then use:
+
+```bash
+python app.py
+```
+
+### `ModuleNotFoundError: No module named 'cv2'`
+
+Install the dependencies inside the active virtual environment:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### Missing `face_recognition_models`
+
+Install the model package inside the active virtual environment:
+
+```bash
+python -m pip install face-recognition-models==0.3.0
+```
+
+### Camera cannot open
+
+Check macOS camera permissions:
+
+```text
+System Settings → Privacy & Security → Camera
+```
+
+Enable access for the terminal or application that launches Python.
+
+You can try another camera index:
+
+```bash
+python app.py --camera 1
+```
+
+### Dashboard redirects to login
+
+Confirm that:
+
+- The admin account exists.
+- The dashboard is using the expected database.
+- The browser is not blocking local cookies.
+- `DASHBOARD_SECRET_KEY` is set consistently.
+
+### Dashboard says `no such table`
+
+Start the dashboard or initialize the database through Python using the repository's active virtual environment. The updated storage layer creates and upgrades the required tables automatically.
+
+### Attendance already recorded
+
+This means the person has already been recorded for the current session. It is normal duplicate-prevention behavior.
+
+## License
+
+Add the license that you choose for this project before distributing it publicly. If no license is present, normal copyright restrictions apply.
+
+## References
+
+[1]: https://github.com/06-nitiin/Face-recognition-attendance-system "Face Recognition Attendance System repository"
+[2]: https://docs.python.org/3/library/venv.html "Python virtual environment documentation"
+[3]: https://flask.palletsprojects.com/ "Flask documentation"
+[4]: https://opencv.org/ "OpenCV project"
+[5]: https://github.com/ageitgey/face_recognition "face_recognition project"
+[6]: https://www.sqlite.org/docs.html "SQLite documentation"
