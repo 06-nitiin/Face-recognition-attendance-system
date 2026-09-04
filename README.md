@@ -512,3 +512,145 @@ Add the license that you choose for this project before distributing it publicly
 [4]: https://opencv.org/ "OpenCV project"
 [5]: https://github.com/ageitgey/face_recognition "face_recognition project"
 [6]: https://www.sqlite.org/docs.html "SQLite documentation"
+
+
+## Operational maintenance
+
+The system includes local tools for correcting records, backing up the database, and checking project readiness before use.
+
+### Correct an attendance record
+
+Administrators can void an incorrect attendance record from the protected dashboard. Voiding does not delete the original row. It creates a separate correction record containing the reason, administrator, and correction time.
+
+A voided record can be restored from the dashboard. Active CSV exports exclude voided records.
+
+The correction history can be inspected with:
+
+```bash
+sqlite3 attendance.db "
+SELECT record_id, status, reason, corrected_by, corrected_at
+FROM attendance_corrections
+ORDER BY corrected_at DESC;
+"
+```
+
+### Back up the database
+
+Create a local backup before database changes:
+
+```bash
+mkdir -p backups
+python backup.py backup \
+  --database attendance.db \
+  --output "backups/attendance-$(date +%Y-%m-%d-%H%M%S).db"
+```
+
+Validate a backup:
+
+```bash
+python -c "from backup import check_integrity; from pathlib import Path; print(check_integrity(Path('backups/attendance-backup.db')))"
+```
+
+A valid backup prints:
+
+```text
+True
+```
+
+Restore to a separate test database before replacing the active database:
+
+```bash
+python backup.py restore \
+  --backup backups/attendance-backup.db \
+  --database restored-attendance.db
+```
+
+The restore command creates a safety copy automatically when replacing an existing database. Do not restore over `attendance.db` unless you intentionally want to replace its current contents.
+
+Keep database backups private. They may contain biometric-related metadata, attendance history, administrator records, and personal information.
+
+### Health check
+
+Run the project health check from the repository root:
+
+```bash
+python healthcheck.py
+```
+
+A successful check prints:
+
+```text
+Project health check passed.
+```
+
+The health check verifies SQLite integrity, required database tables, required Python packages, the training-image directory, and configuration values. It checks for these tables:
+
+```text
+people
+sessions
+attendance
+session_roster
+admin_users
+audit_logs
+attendance_corrections
+```
+
+Run the final automated test suite with:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+A successful test run ends with:
+
+```text
+OK
+```
+
+### Centralized configuration
+
+The optional `config.py` module reads configuration from environment variables:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `ATTENDANCE_DATABASE` | `attendance.db` | SQLite database path |
+| `ATTENDANCE_TRAINING_DIR` | `Training_images` | Enrollment-image directory |
+| `ATTENDANCE_CAMERA` | `0` | Camera index |
+| `ATTENDANCE_TOLERANCE` | `0.5` | Face comparison tolerance |
+| `ATTENDANCE_CONFIRM_FRAMES` | `5` | Required consecutive confirmation frames |
+| `ATTENDANCE_COOLDOWN` | `10` | Recognition cooldown in seconds |
+| `DASHBOARD_HOST` | `127.0.0.1` | Local dashboard host |
+| `DASHBOARD_PORT` | `5000` | Local dashboard port |
+| `DASHBOARD_SECRET_KEY` | None | Flask session-signing secret |
+
+Use `.env.example` as a reference. Do not commit a real secret key or a file containing real environment values.
+
+## Current completion status
+
+The project currently supports the complete local workflow:
+
+```text
+Enroll a person
+    ↓
+Capture multiple face samples
+    ↓
+Recognize faces through the webcam
+    ↓
+Confirm identities across frames
+    ↓
+Create a named attendance session
+    ↓
+Record attendance in SQLite
+    ↓
+Manage rosters and present/absent status
+    ↓
+Review analytics and export reports
+    ↓
+Correct records without deleting history
+    ↓
+Protect administration with login and audit logs
+    ↓
+Back up and validate the database
+```
+
+The application is complete as a local educational prototype. Further work would be optional product development rather than required functionality, such as deployment architecture, stronger production security, encrypted biometric storage, advanced reporting, mobile access, or integration with an institutional identity system.
