@@ -11,6 +11,7 @@ from attendance import AttendanceStore
 from auth import AuthStore
 from analytics import build_analytics
 from roster import RosterStore
+from corrections import CorrectionStore
 
 
 def create_app(database_path: Path) -> Flask:
@@ -130,6 +131,33 @@ def create_app(database_path: Path) -> Flask:
         finally:
             roster_store.close(); store.close(); auth_store.close()
 
+    @app.post("/attendance/<int:record_id>/void")
+    @login_required
+    def void_attendance(record_id):
+        reason = request.form.get("reason", "")
+        correction_store = CorrectionStore(app.config["DATABASE_PATH"])
+        auth_store = AuthStore(app.config["DATABASE_PATH"])
+        try:
+            correction_store.void_record(record_id, reason, session["username"])
+            auth_store.audit(session["username"], "attendance_voided", f"record:{record_id}")
+        except ValueError as error:
+            return Response(str(error), status=400)
+        finally:
+            correction_store.close(); auth_store.close()
+        return redirect(url_for("attendance"))
+
+    @app.post("/attendance/<int:record_id>/restore")
+    @login_required
+    def restore_attendance(record_id):
+        correction_store = CorrectionStore(app.config["DATABASE_PATH"])
+        auth_store = AuthStore(app.config["DATABASE_PATH"])
+        try:
+            correction_store.restore_record(record_id)
+            auth_store.audit(session["username"], "attendance_restored", f"record:{record_id}")
+        finally:
+            correction_store.close(); auth_store.close()
+        return redirect(url_for("attendance"))
+
     @app.get("/sessions")
     @login_required
     def sessions():
@@ -143,25 +171,31 @@ def create_app(database_path: Path) -> Flask:
     @login_required
     def attendance():
         store, auth_store = stores()
+        correction_store = CorrectionStore(app.config["DATABASE_PATH"])
         try:
             session_id = request.args.get("session_id", type=int)
             session_date = request.args.get("date") or None
-            return render_template("attendance.html", records=store.records(session_id, session_date), sessions=store.list_sessions(), selected_session=session_id, selected_date=session_date or "")
+            records = store.records(session_id, session_date)
+            return render_template("attendance.html", records=records, corrections=correction_store.statuses(), sessions=store.list_sessions(), selected_session=session_id, selected_date=session_date or "")
         finally:
-            store.close(); auth_store.close()
+            correction_store.close(); store.close(); auth_store.close()
 
     @app.get("/attendance/export")
     @login_required
     def export_attendance():
         store, auth_store = stores()
+        correction_store = CorrectionStore(app.config["DATABASE_PATH"])
         try:
             records = store.records(request.args.get("session_id", type=int), request.args.get("date") or None)
+            corrections = correction_store.statuses()
         finally:
-            store.close(); auth_store.close()
+            correction_store.close(); store.close(); auth_store.close()
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(["attendance_id", "person_id", "name", "session_id", "date", "time"])
         for record in records:
+            if record.id in corrections:
+                continue
             writer.writerow([record.id, record.person_id, record.name, record.session_id, record.attendance_date, record.time])
         response = Response(output.getvalue(), mimetype="text/csv")
         response.headers["Content-Disposition"] = "attachment; filename=attendance-report.csv"
